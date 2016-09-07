@@ -23,10 +23,10 @@ from pyDNAbinding.binding_model import DNASequence, PWMBindingModel, DNABindingM
 
 GenomicRegion = namedtuple('GenomicRegion', ['contig', 'start', 'stop'])
 
-DNASE_IDR_PEAKS_BASE_DIR = "..."
-DNASE_FOLD_COV_DIR = "..."
-TRAIN_TSV_BASE_DIR = "..."
-TEST_TSV_BASE_DIR = "..."
+DNASE_IDR_PEAKS_BASE_DIR = "/Users/DevinPetersohn/DREAM_Challenge/DREAM_invivo_tf_binding_prediction_challenge_baseline/DNASE/peaks/idr/"
+DNASE_FOLD_COV_DIR = "/Users/DevinPetersohn/DREAM_Challenge/DREAM_invivo_tf_binding_prediction_challenge_baseline/DNASE/fold_coverage_wiggles/"
+TRAIN_TSV_BASE_DIR = "/Users/DevinPetersohn/DREAM_Challenge/DREAM_invivo_tf_binding_prediction_challenge_baseline/ChIPseq/labels/"
+TEST_TSV_BASE_DIR = "/Users/DevinPetersohn/DREAM_Challenge/DREAM_invivo_tf_binding_prediction_challenge_baseline/ChIPseq/labels/"
 
 aggregate_region_scores_labels = [
     "mean", "max", "q99", "q95", "q90", "q75", "q50"]
@@ -111,32 +111,34 @@ class LabelData(object):
             #   bedtools intersect -wa -a stdin -b {regions_fname} \
             # | uniq > {output_fname}
             filtered_regions_fp = tempfile.NamedTemporaryFile("w+")
-            p1 = Popen(["zcat", self.labels_fname], stdout=PIPE)
-            p2 = Popen(["tail", "-n", "+2",], stdout=PIPE, stdin=p1.stdout)
+            #p1 = Popen(["gzcat", self.labels_fname], stdout=PIPE)
+            #p2 = Popen(["tail", "-n", "+2",], stdout=PIPE, stdin=p1.stdout)
             # check to see if we should limit the numbere of input rows
-            p4_input = None
+            #p4_input = None
             # if we want to limit the number of rows, then add a call to head
             if self.max_n_rows is not None:
-                p3 = Popen(
-                    ["head", "-n", str(self.max_n_rows),], stdout=PIPE, stdin=p2.stdout)
-                p4_input = p3.stdout
+                os.system("gzcat " + str(self.labels_fname) + "| tail -n +2 | head -n " + str(self.max_n_rows) + " | bedtools intersect -wa -a stdin -b " + str(self.regions_fname.name) + " | uniq > " + str(filtered_regions_fp))
+            #    p3 = Popen(
+            #       ["head", "-n", str(self.max_n_rows),], stdout=PIPE, stdin=p2.stdout)
+            #    p4_input = p3.stdout
             else:
-                p3 = None
-                p4_input = p2.stdout
-            p4 = Popen(["bedtools", "intersect",
-                        "-wa",
-                        "-a", "stdin",
-                        "-b", self.regions_fname],
-                       stdin=p4_input,
-                       stdout=PIPE
-            )
-            p5 = Popen(["uniq",], stdin=p4.stdout, stdout=filtered_regions_fp)
-            p5.wait()
+                #p3 = None
+                #p4_input = p2.stdout
+                os.system("gzcat " + str(self.labels_fname) + "| tail -n +2 | bedtools intersect -wa -a stdin -b " + str(self.regions_fname) + " | uniq > " + str(filtered_regions_fp.name))
+            #p4 = Popen(["bedtools", "intersect",
+            #            "-wa",
+            #            "-a", "stdin",
+            #            "-b", self.regions_fname],
+            #           stdin=p4_input,
+            #           stdout=PIPE
+            #)
+            #p5 = Popen(["uniq",], stdin=p4.stdout, stdout=filtered_regions_fp)
+            #p5.wait()
             # Allow p* to receive a SIGPIPE if p(*-1) exits.
-            p1.terminate()  
-            p2.terminate()
-            if p3 is not None: p3.terminate()
-            p4.terminate()
+            #p1.terminate()  
+            #p2.terminate()
+            #if p3 is not None: p3.terminate()
+            #p4.terminate()
             # flush the output file cache, and reset the file pointer
             filtered_regions_fp.flush()
             filtered_regions_fp.seek(0)
@@ -189,7 +191,7 @@ class LabelData(object):
         all_agg_scores = np.zeros(
             (len(self), len(aggregate_region_scores_labels)), dtype=float)
         binding_models = load_binding_models("models.yaml")
-        model = binding_models.get_from_tfname(self.factor)
+        model = binding_models.get_from_tfname(self.factor)[0]
         for i, seq in enumerate(self.iter_seqs(fasta_fname)):
             if i%1000000 == 0: print >> sys.stderr, i, len(self)
             all_agg_scores[i,:] = aggregate_region_scores(
@@ -300,10 +302,11 @@ def train_model(factor):
     from sklearn.linear_model import SGDClassifier
     mo = SGDClassifier(
         loss='log', class_weight='balanced', n_jobs=16)
+    
     mo.fit(train_amb_filtered_mat, train_amb_filtered_labels)
-
+    
     print "Loading the test set"
-    true_labels_fname = FULL_GENOME_TSV_BASE_DIR + \
+    true_labels_fname = TEST_TSV_BASE_DIR + \
         "{}.train.labels.tsv.gz".format(factor)
     label_data = LabelData(true_labels_fname)
     print label_data.samples
